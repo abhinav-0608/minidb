@@ -94,21 +94,24 @@ class TestPersistence:
         other = Schema((Column("id", ColumnType.INT), Column("v", ColumnType.TEXT)))
         with Pager(path) as pg:
             cat = Catalog.open(pg)
-            cat.add("users", 2, USERS)
-            cat.add("logs", 3, other)
+            cat.add("users", 2, 90, USERS)
+            cat.add("logs", 3, 91, other)
         with Pager(path) as pg:
             cat = Catalog.open(pg)
             assert cat.table_names() == ["users", "logs"]
             assert cat.get("users").first_page_id == 2
+            assert cat.get("users").index_root_page_id == 90
             assert cat.get("users").schema == USERS
+            assert cat.get("logs").index_root_page_id == 91
             assert cat.get("logs").schema == other
 
     def test_add_is_visible_immediately(self, tmp_path):
         with Pager(str(tmp_path / "t.db")) as pg:
             cat = Catalog.open(pg)
-            cat.add("users", 2, USERS)
+            cat.add("users", 2, 90, USERS)
             assert cat.has("users")
             assert cat.get("users").schema == USERS
+            assert cat.get("users").index_root_page_id == 90
 
     def test_get_unknown_raises(self, tmp_path):
         with Pager(str(tmp_path / "t.db")) as pg:
@@ -132,7 +135,7 @@ class TestCorrupt:
             Catalog.open(pg)  # make a real catalog page
             # write a row straight into the catalog heap, bypassing Catalog.add
             raw = Heap(pg, CATALOG_SCHEMA, 1, page_type=PageType.CATALOG)
-            raw.insert(("bad", 9, "this is not a column list"))
+            raw.insert(("bad", 9, "this is not a column list", 10))
         with Pager(path) as pg:
             with pytest.raises(MiniDBError):
                 Catalog.open(pg)
@@ -146,10 +149,11 @@ class TestChaining:
         with Pager(path, page_size=512) as pg:
             cat = Catalog.open(pg)
             for i, n in enumerate(names):
-                cat.add(n, 1000 + i, USERS)
+                cat.add(n, 1000 + i, 5000 + i, USERS)
             assert pg.page_count > 3  # catalog definitely chained
         with Pager(path, page_size=512) as pg:
             cat = Catalog.open(pg)
             assert cat.table_names() == names
             assert cat.get("t075").first_page_id == 1075
+            assert cat.get("t075").index_root_page_id == 5075
             assert cat.get("t149").schema == USERS

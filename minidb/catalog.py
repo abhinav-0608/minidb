@@ -6,13 +6,17 @@ catalog is a Heap (Stage 2) with a fixed schema, rooted at a known page
 
 One catalog row per user table::
 
-    table_name    TEXT   "users"
-    first_page_id INT    2
-    column_defs   TEXT   "id INT, name TEXT, age TEXT"
+    table_name          TEXT   "users"
+    first_page_id       INT    2      (heap chain start; never changes)
+    column_defs         TEXT   "id INT, name TEXT, age TEXT"
+    index_root_page_id  INT    3      (id index root; never changes - fixed root)
 
 ``column_defs`` is the user table's column list rendered as text and parsed
 back into a Schema on open. Column names are validated as identifiers when a
 table is created, so the ", " and " " separators are unambiguous.
+
+Every column here is immutable after CREATE TABLE, so the catalog stays a
+pure append-only heap - no in-place updates.
 
 Not crash-atomic yet: a crash partway through creating a table can leak an
 allocated-but-unreferenced heap page. Stage 9's WAL makes it atomic.
@@ -34,6 +38,7 @@ CATALOG_SCHEMA = Schema(
         Column("table_name", ColumnType.TEXT),
         Column("first_page_id", ColumnType.INT),
         Column("column_defs", ColumnType.TEXT),
+        Column("index_root_page_id", ColumnType.INT),
     )
 )
 
@@ -43,6 +48,7 @@ class TableInfo:
     name: str
     first_page_id: int
     schema: Schema  # the *user* table's schema
+    index_root_page_id: int
 
 
 def encode_columns(schema: Schema) -> str:
@@ -73,9 +79,9 @@ class Catalog:
     def __init__(self, heap: Heap) -> None:
         self._heap = heap
         self._tables: dict[str, TableInfo] = {}
-        for name, first_page_id, defs in heap.scan():
+        for name, first_page_id, defs, index_root in heap.scan():
             self._tables[name] = TableInfo(
-                name, first_page_id, decode_columns(defs)
+                name, first_page_id, decode_columns(defs), index_root
             )
 
     @classmethod
@@ -110,6 +116,16 @@ class Catalog:
     def table_names(self) -> list[str]:
         return list(self._tables)
 
-    def add(self, name: str, first_page_id: int, schema: Schema) -> None:
-        self._heap.insert((name, first_page_id, encode_columns(schema)))
-        self._tables[name] = TableInfo(name, first_page_id, schema)
+    def add(
+        self,
+        name: str,
+        first_page_id: int,
+        index_root_page_id: int,
+        schema: Schema,
+    ) -> None:
+        self._heap.insert(
+            (name, first_page_id, encode_columns(schema), index_root_page_id)
+        )
+        self._tables[name] = TableInfo(
+            name, first_page_id, schema, index_root_page_id
+        )

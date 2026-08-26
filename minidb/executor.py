@@ -1,8 +1,11 @@
-"""Stage 4 - the executor (sequential).
+"""Stage 4/6 - the executor.
 
-Runs a ``SelectQuery`` against a ``Database`` by scanning the whole table.
-No index, no planning: every SELECT reads every row of every page. Stage 6
-adds an index fast-path for ``WHERE id = <const>``.
+Runs a ``SelectQuery`` against a ``Database``. The one optimisation: when the
+condition is ``<id> = <const>`` (column 0 is always the unique, indexed id),
+it does a B+ tree lookup instead of a full scan. Everything else is a scan.
+
+``use_index=False`` forces the scan path - the benchmark and the "index must
+agree with scan" tests rely on that.
 """
 
 from __future__ import annotations
@@ -21,9 +24,11 @@ class SelectResult:
     rows: list[tuple]
 
 
-def execute_select(db: Database, query: SelectQuery) -> SelectResult:
+def execute_select(
+    db: Database, query: SelectQuery, *, use_index: bool = True
+) -> SelectResult:
     schema = db.schema_of(query.table)  # raises "no such table" if unknown
-    heap = db.open_table(query.table)
+    table = db.open_table(query.table)
 
     # projection: which column indices to return, in the requested order
     if query.columns is None:
@@ -43,8 +48,14 @@ def execute_select(db: Database, query: SelectQuery) -> SelectResult:
         cond_index = _resolve_column(schema, cond.column)
         _check_comparable(schema.columns[cond_index], cond.value)
 
-    rows: list[tuple] = []
-    for row in heap.scan():
+    # fast path: equality on column 0 (the unique, indexed id)
+    if use_index and cond is not None and cond_index == 0:
+        row = table.lookup_by_id(cond.value)
+        rows = [] if row is None else [tuple(row[i] for i in proj)]
+        return SelectResult(out_names, rows)
+
+    rows = []
+    for row in table.scan():
         if cond is not None and row[cond_index] != cond.value:
             continue
         rows.append(tuple(row[i] for i in proj))

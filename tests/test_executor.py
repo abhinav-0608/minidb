@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import random
+
 import pytest
 
 from minidb.database import Database
@@ -202,3 +204,66 @@ class TestAcrossPages:
                 db, SelectQuery("t", ("id",), Condition("age", "=", 3))
             ).rows
             assert got == [(i,) for i in range(500) if i % 7 == 3]
+
+
+# ---------------------------------------------------------------------------
+class TestIndexPath:
+    """Stage 6: `WHERE id = k` uses the B+ tree; it must match the scan."""
+
+    @pytest.fixture
+    def big_db(self, tmp_path):
+        path = str(tmp_path / "b.db")
+        ids = random.Random(7).sample(range(100_000), 1500)
+        with Database(path, page_size=512) as db:
+            db.create_table("users", USERS)
+            table = db.open_table("users")
+            for i in ids:
+                table.insert((i, f"n{i}", i % 100))
+        db = Database(path, page_size=512)
+        yield db, ids
+        db.close()
+
+    def test_index_and_scan_agree_for_present_keys(self, big_db):
+        db, ids = big_db
+        for k in ids[:250]:
+            q = SelectQuery("users", None, Condition("id", "=", k))
+            assert (
+                execute_select(db, q, use_index=True).rows
+                == execute_select(db, q, use_index=False).rows
+                == [(k, f"n{k}", k % 100)]
+            )
+
+    @pytest.mark.parametrize("k", [-1, 0, 100_000, 999_999])
+    def test_index_and_scan_agree_for_absent_keys(self, big_db, k):
+        db, _ = big_db
+        q = SelectQuery("users", None, Condition("id", "=", k))
+        assert (
+            execute_select(db, q, use_index=True).rows
+            == execute_select(db, q, use_index=False).rows
+            == []
+        )
+
+    def test_projection_applies_on_the_index_path(self, big_db):
+        db, ids = big_db
+        k = ids[0]
+        r = execute_select(
+            db, SelectQuery("users", ("name", "id"), Condition("id", "=", k)),
+            use_index=True,
+        )
+        assert r.column_names == ["name", "id"]
+        assert r.rows == [(f"n{k}", k)]
+
+    def test_default_uses_the_index_path(self, big_db):
+        db, ids = big_db
+        q = SelectQuery("users", None, Condition("id", "=", ids[5]))
+        assert execute_select(db, q).rows == execute_select(db, q, use_index=True).rows
+
+    def test_non_id_equality_still_scans_both_ways(self, big_db):
+        db, ids = big_db
+        q = SelectQuery("users", ("id",), Condition("age", "=", 42))
+        expected = [(i,) for i in ids if i % 100 == 42]
+        assert (
+            execute_select(db, q, use_index=True).rows
+            == execute_select(db, q, use_index=False).rows
+            == expected
+        )

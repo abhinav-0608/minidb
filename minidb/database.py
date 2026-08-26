@@ -13,9 +13,11 @@ from .catalog import Catalog
 from .constants import DEFAULT_PAGE_SIZE
 from .errors import MiniDBError
 from .heap import Heap
+from .index import BTreeIndex
 from .page import PageType
 from .pager import Pager
 from .record import ColumnType, Schema
+from .table import Table
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -62,11 +64,14 @@ class Database:
         if self._catalog.has(name):
             raise MiniDBError(f"table {name!r} already exists")
 
-        # heap page first, catalog row last: a crash in between only leaks a
-        # page - it never leaves the catalog pointing at a page that is not
-        # there.
+        # heap page and index root first, catalog row last: a crash in between
+        # only leaks pages - it never leaves the catalog pointing at a page
+        # that is not there.
         heap = Heap.create(self._pager, schema, page_type=PageType.HEAP)
-        self._catalog.add(name, heap.first_page_id, schema)
+        index = BTreeIndex.create(self._pager)
+        self._catalog.add(
+            name, heap.first_page_id, index.root_page_id, schema
+        )
 
     def table_names(self) -> list[str]:
         return self._catalog.table_names()
@@ -74,11 +79,11 @@ class Database:
     def schema_of(self, name: str) -> Schema:
         return self._catalog.get(name).schema
 
-    def open_table(self, name: str) -> Heap:
+    def open_table(self, name: str) -> Table:
         info = self._catalog.get(name)
-        return Heap(
+        return Table(
             self._pager,
             info.schema,
             info.first_page_id,
-            page_type=PageType.HEAP,
+            info.index_root_page_id,
         )
