@@ -14,8 +14,9 @@ from dataclasses import dataclass
 
 from .database import Database
 from .errors import MiniDBError
-from .query import SelectQuery
+from .query import CreateTableQuery, InsertQuery, SelectQuery
 from .record import Column, ColumnType, Schema
+from .sql import parse, parse_script
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,29 @@ def execute_select(
         rows.append(tuple(row[i] for i in proj))
 
     return SelectResult(out_names, rows)
+
+
+def execute(db: Database, query):
+    """Run one typed query. Returns a SelectResult for SELECT, else None."""
+    if isinstance(query, SelectQuery):
+        return execute_select(db, query)
+    if isinstance(query, InsertQuery):
+        db.open_table(query.table).insert(query.values)
+        return None
+    if isinstance(query, CreateTableQuery):
+        db.create_table(query.table, Schema(query.columns))
+        return None
+    raise MiniDBError(f"cannot execute a {type(query).__name__}")
+
+
+def execute_sql(db: Database, sql: str):
+    """Parse and run exactly one SQL statement."""
+    return execute(db, parse(sql))
+
+
+def execute_script(db: Database, sql: str) -> list:
+    """Parse and run a ';'-separated script; returns one result per statement."""
+    return [execute(db, q) for q in parse_script(sql)]
 
 
 def _resolve_column(schema: Schema, name: str) -> int:

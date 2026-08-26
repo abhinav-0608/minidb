@@ -2,14 +2,14 @@
 the executor (Stage 4+).
 
 The grammar has no nested expressions, so one flat frozen dataclass per
-statement kind is enough: no general AST, no visitor. Stage 4 needs only
-``SelectQuery``; ``CreateTableQuery`` and ``InsertQuery`` arrive with the
-parser.
+statement kind is enough: no general AST, no visitor.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from .record import Column
 
 
 @dataclass(frozen=True)
@@ -28,3 +28,21 @@ class SelectQuery:
     def __post_init__(self) -> None:
         if self.columns is not None:
             object.__setattr__(self, "columns", tuple(self.columns))
+
+
+@dataclass(frozen=True)
+class CreateTableQuery:
+    table: str
+    columns: tuple[Column, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "columns", tuple(self.columns))
+
+
+@dataclass(frozen=True)
+class InsertQuery:
+    table: str
+    values: tuple[object, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "values", tuple(self.values))
