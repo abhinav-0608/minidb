@@ -46,13 +46,14 @@ class Table:
         return self._index
 
     def insert(self, values) -> tuple[int, int]:
-        """Append a row and index its id. Returns the RID."""
+        """Append a row and index its id, as one transaction. Returns the RID."""
         values = tuple(values)
         key = values[0]  # column 0 is always the unique 'id' (decision #4)
-        if key in self._index:
-            raise MiniDBError(f"duplicate id {key!r} in table")
-        rid = self._heap.insert(values)
-        self._index.insert(key, rid)
+        with self._pager.transaction():
+            if key in self._index:
+                raise MiniDBError(f"duplicate id {key!r} in table")
+            rid = self._heap.insert(values)
+            self._index.insert(key, rid)
         return rid
 
     def scan(self) -> Iterator[tuple]:

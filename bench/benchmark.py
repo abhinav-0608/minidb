@@ -36,7 +36,9 @@ SCHEMA = Schema(
 
 
 def build(path: str, n: int, page_size: int) -> tuple[float, int]:
-    with Database(path, page_size=page_size) as db:
+    # wal=False: an fsync per insert would dominate; this measures storage +
+    # index cost. The WAL's cost is discussed separately (Stage 10).
+    with Database(path, page_size=page_size, wal=False) as db:
         db.create_table("t", SCHEMA)
         table = db.open_table("t")
         t0 = time.perf_counter()
