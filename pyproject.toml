@@ -1,0 +1,21 @@
+[project]
+name = "minidb"
+version = "0.1.0"
+description = "A tiny disk-backed relational database, built for learning."
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["minidb"]
+
+[tool.pytest.ini_options]
+# Lets `pytest` find the `minidb` package when run from the repo root,
+# with no `pip install` step.
+pythonpath = ["."]
+testpaths = ["tests"]
