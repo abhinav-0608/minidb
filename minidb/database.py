@@ -38,6 +38,11 @@ class Database:
     def close(self) -> None:
         self._pager.close()
 
+    @property
+    def page_count(self) -> int:
+        """Total pages in the file (for diagnostics and benchmarks)."""
+        return self._pager.page_count
+
     # -- tables ------------------------------------------------------------
 
     def create_table(self, name: str, schema: Schema) -> None:
