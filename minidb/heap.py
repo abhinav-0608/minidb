@@ -26,19 +26,39 @@ from .record import Schema
 
 
 class Heap:
-    def __init__(self, pager: Pager, schema: Schema, first_page_id: int) -> None:
+    def __init__(
+        self,
+        pager: Pager,
+        schema: Schema,
+        first_page_id: int,
+        *,
+        page_type: PageType = PageType.HEAP,
+    ) -> None:
         self._pager = pager
         self._schema = schema
+        self._page_type = page_type
         self._first_page_id = first_page_id
         # walk the chain once so inserts can append in O(1)
         self._last_page_id = self._walk_to_last_page(first_page_id)
 
     @classmethod
-    def create(cls, pager: Pager, schema: Schema) -> "Heap":
+    def create(
+        cls,
+        pager: Pager,
+        schema: Schema,
+        *,
+        page_type: PageType = PageType.HEAP,
+    ) -> "Heap":
         page_id = pager.allocate_page()
-        empty = SlottedPage.init_empty(pager.page_size, PageType.HEAP)
+        empty = SlottedPage.init_empty(pager.page_size, page_type)
         pager.write_page(page_id, empty.buffer)
-        return cls(pager, schema, page_id)
+        return cls(pager, schema, page_id, page_type=page_type)
+
+    def _load(self, page_id: int) -> SlottedPage:
+        return SlottedPage(
+            bytearray(self._pager.read_page(page_id)),
+            expected_type=self._page_type,
+        )
 
     @property
     def first_page_id(self) -> int:
@@ -64,7 +84,7 @@ class Heap:
                 f"{self._pager.page_size}-byte page can hold is {max_record}"
             )
 
-        last = SlottedPage(bytearray(self._pager.read_page(self._last_page_id)))
+        last = self._load(self._last_page_id)
         if last.can_fit(len(data)):
             slot_id = last.add_record(data)
             self._pager.write_page(self._last_page_id, last.buffer)
@@ -72,7 +92,7 @@ class Heap:
 
         # last page is full: allocate a fresh one and link it on
         new_id = self._pager.allocate_page()
-        new_page = SlottedPage.init_empty(self._pager.page_size, PageType.HEAP)
+        new_page = SlottedPage.init_empty(self._pager.page_size, self._page_type)
         slot_id = new_page.add_record(data)
         last.next_page_id = new_id
         self._pager.write_page(self._last_page_id, last.buffer)  # persist the link
@@ -90,7 +110,7 @@ class Heap:
             if page_id in seen:
                 raise MiniDBError(f"heap page chain has a cycle at page {page_id}")
             seen.add(page_id)
-            page = SlottedPage(bytearray(self._pager.read_page(page_id)))
+            page = self._load(page_id)
             for slot_id in range(page.num_slots):
                 yield self._schema.decode_row(page.read_record(slot_id))
             page_id = page.next_page_id
@@ -103,7 +123,7 @@ class Heap:
             if page_id in seen:
                 raise MiniDBError(f"heap page chain has a cycle at page {page_id}")
             seen.add(page_id)
-            page = SlottedPage(bytearray(self._pager.read_page(page_id)))
+            page = self._load(page_id)
             if page.next_page_id == 0:
                 return page_id
             page_id = page.next_page_id

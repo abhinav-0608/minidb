@@ -42,7 +42,8 @@ _SLOT = struct.Struct("<HH")
 
 class PageType(enum.IntEnum):
     HEAP = 1
-    # reserved for later stages: CATALOG = 2, BTREE_INTERNAL = 3, BTREE_LEAF = 4
+    CATALOG = 2
+    # reserved for later stages: BTREE_INTERNAL = 3, BTREE_LEAF = 4
 
 
 class SlottedPage:

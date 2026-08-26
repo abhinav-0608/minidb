@@ -29,14 +29,21 @@ MAX_PAGE_SIZE = 1 << 15
 # reject "this is not a MiniDB file" before trusting any other byte.
 MAGIC = b"MINIDB\x00\x00"
 
-# Bumped whenever the on-disk layout changes incompatibly. Stage 3 (the
-# catalog) is expected to be the first bump.
+# Bumped whenever the *pager's* on-disk layout changes incompatibly (the file
+# header or the page header). The catalog is a higher layer and needed no
+# bump; the next is likely Stage 9 (a per-page LSN for the WAL).
 FORMAT_VERSION = 1
 
 # Page 0 is reserved for the file header and is owned by the pager. Every
 # other component is handed page ids starting at 1.
 HEADER_PAGE_ID = 0
 FIRST_DATA_PAGE_ID = 1
+
+# The catalog (table metadata) is rooted at a fixed page, found by convention
+# rather than a stored pointer - the same choice SQLite makes for its page 1.
+# Because Database.open() creates the catalog before any table can be made,
+# the catalog always wins the first allocation, which is page 1. Stage 3.
+CATALOG_ROOT_PAGE_ID = 1
 
 
 # --- record encoding (Stage 2) -----------------------------------------------
