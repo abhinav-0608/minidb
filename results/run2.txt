@@ -1,0 +1,31 @@
+# MiniDB benchmark
+# macOS-26.6.2-arm64-arm-64bit-Mach-O  |  Python 3.14.2
+# 2026-09-24 22:19
+
+## 1. sequential scan vs. B+ tree index  (point query: WHERE id = k)
+
+    rows   pages height  leaf/int cap  insert/s  scan (ms)  index (ms)   speedup
+--------------------------------------------------------------------------------
+    1000      17      2       292/340      9826       1.11       0.055       20x
+   10000     148      2       292/340      8411      11.02       0.098      112x
+  100000    1471      3       292/340      5547     111.28       0.707      157x
+  500000    7460      3       292/340      5153     553.98       3.261      170x
+
+## 2. the WAL's cost  (insert throughput, 2000 rows)
+
+  wal=off (bulk load)               9373 inserts/s
+  wal=on  (fsync per commit)        5528 inserts/s
+
+## 3. page size  (10000 rows, index lookup WHERE id = k)
+
+  page   pages height  leaf/int cap  index (ms)
+-----------------------------------------------
+  1024     591      3         72/84       0.236
+  4096     148      2       292/340       0.098
+  8192      75      2       584/681       0.095
+
+notes:
+  - scan is O(rows); index lookup is ~height page reads + 1 heap read
+  - the tree gains one level per ~300x more rows (fanout ~300 at 4K)
+  - wal=on pays one fsync per statement - the price of durability
+  - bigger pages -> higher fanout -> shorter tree, but more I/O per node
